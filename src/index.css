@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #0a1220;
+  font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+.font-title {
+  font-family: 'Bungee', 'Impact', 'Arial Black', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(20, 30, 48, 0.82), rgba(10, 16, 28, 0.86));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.float-text {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-weight: 800;
+  font-size: 18px;
+  text-shadow: 0 2px 0 #000, 0 0 8px #000;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: 230px;
+  padding: 7px 11px;
+  border-radius: 14px;
+  background: #fff;
+  color: #222;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.25;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  will-change: transform, opacity;
+}
+.bubble.chloe { background: #ffe0ef; border: 2px solid #ff7ab5; }
+.bubble.karen { background: #eadcff; border: 2px solid #a679ff; }
+
+@keyframes pop-in {
+  from { transform: translateY(8px) scale(0.92); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes fade-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  12% { opacity: 1; transform: none; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes title-in {
+  0% { opacity: 0; transform: scale(1.35); letter-spacing: 0.3em; }
+  100% { opacity: 1; transform: scale(1); letter-spacing: 0.02em; }
+}
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 60, 60, 0.0); }
+  50% { box-shadow: 0 0 22px 4px rgba(255, 60, 60, 0.75); }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.anim-pop { animation: pop-in 0.22s ease-out both; }
+.anim-toast { animation: fade-up 3.4s ease-out both; }
+.anim-title { animation: title-in 1.2s cubic-bezier(.2,.8,.2,1) both; }
+.anim-danger { animation: pulse-red 0.9s infinite; }
+.anim-float { animation: float-y 3s ease-in-out infinite; }
+
+input[type='range'] { accent-color: #ffb938; }
+button { touch-action: manipulation; }
