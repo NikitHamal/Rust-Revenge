@@ -57,3 +57,8 @@ node tools/harness/build.mjs logic && node tools/harness/.out/logic.mjs   # head
 * [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) — story, systems, balance tables
 * [`docs/ROADMAP.md`](docs/ROADMAP.md) — prioritised backlog
 * [`docs/TESTING.md`](docs/TESTING.md) — headless harness + manual QA checklist
+
+## v2 — Realism overhaul
+Procedural PBR (sky-driven IBL, rust/wood/bark/skin/fabric textures, world-space grime & wet surfaces), anatomical characters with faces,
+detailed instanced horde, wind-swept foliage, caustic water, rain/lightning, blood moons, spitter & bloater zombies, supply drops and a dash move.
+See `docs/CONTINUITY.md` for details and `docs/VISUAL_QA.md` for GPU-less screenshots.

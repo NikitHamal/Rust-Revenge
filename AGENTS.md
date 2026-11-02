@@ -24,10 +24,15 @@ src/game/zombies.ts         ZombieManager: spawn, waves, AI, spatial hash, hitsc
 src/game/player.ts          Bruno: movement, auto-fire, melee, slam, chopping, crate pickup
 src/game/ship.ts            Ship hull per level, deck slots, building meshes + turret/eco logic
 src/game/cinematic.ts       The scripted intro (timeline in seconds; edit `lines`, `bKeys`, `cKeys`, `kKeys`, `camera()`)
-src/game/characters.ts      Humanoid rig (+poses), held weapons, instanced ZombieSwarm
+src/game/characters.ts      loft() anatomical meshes, jointed Humanoid rig (elbows/knees, poses), held weapons, instanced ZombieSwarm (12 parts, variants)
 src/game/props.ts           Forest/rocks/grass/reeds, wrecks, treehouse, choppable trees, loot crates
 src/game/terrain.ts         Terrain mesh, water shader, depth texture, minimap base
-src/game/lighting.ts        Day/night palette & shadow light
+src/game/lighting.ts        Day/night/blood-moon/storm palette, sky-driven IBL (PMREM), shadow light, lightning
+src/game/sky.ts             Procedural atmosphere dome shader (gradient, sun/moon, clouds, stars) — also the IBL source
+src/game/shading.ts         onBeforeCompile patches: world-space grime/bump/roughness/cloud-shadow (patchSurface) + wind sway (patchWind); FX uniforms
+src/game/textures.ts        ALL procedural canvas textures (rust, planks, bark, foliage cards, grass, skin, faces, fabric, decals)
+src/game/post.ts            Final grade pass (vignette, CA, grain, split-tone, hurt flash, blood-moon tint)
+src/game/worldfx.ts         Decals, acid Projectiles, GPU Rain, SupplyDrop, WorldEvents director (blood moon / storm / drops)
 src/game/effects.ts         Particles / Tracers / Shockwaves (pooled)
 src/game/audio.ts           Procedural WebAudio SFX + generative music
 src/game/store.ts           Tiny external store (React <-> game) + settings persistence
@@ -50,3 +55,12 @@ tools/harness/*             Headless Node test harness (stub renderer)
 
 ## Definition of done for any change
 1. `npx tsc --noEmit` clean · 2. `npm run build` OK · 3. `node tools/harness/...logic` prints `errors: 0` · 4. update `docs/CONTINUITY.md` (+ ROADMAP checkboxes).
+
+## Visual pipeline rules (session 2)
+* Everything is procedural — **no asset files**. Textures live in `textures.ts` (cached; clone before changing `repeat`).
+* Give static materials world-space detail with `patchSurface(mat, opts)`; `stdMat()` already does. Call `patchWind` *after* `patchSurface`.
+* **Never** `patchSurface` characters/zombies (world-space noise would swim as they move) — they use UV textures + `bumpMap`.
+* Foliage = alpha-tested cards (`alphaTest`, `DoubleSide`) with hand-set normals (radial/up) for soft volumetric light.
+* Lighting is IBL (sky dome → PMREM, re-baked only when sky changes >0.06) + sun + weak hemisphere. Don't crank hemi; tune `Lighting` palettes.
+* Post chain (High tier): RenderPass → UnrealBloom → OutputPass(tonemap) → Grade (sRGB). Grade works in display space.
+* Headless GPU-less visual QA is possible: see `docs/VISUAL_QA.md` (Playwright + SwiftShader). Use `applyQuality('medium')` for speed.

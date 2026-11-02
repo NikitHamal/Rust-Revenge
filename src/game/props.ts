@@ -16,13 +16,16 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
+  RepeatWrapping,
   Scene,
   Vector3,
   Euler,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WORLD, riverCenter, riverDist, riverHalfWidth, terrainHeight } from './config';
-import { G, StaticBatch, mulberry32, plankTexture, signTexture, stdMat } from './utils';
+import { G, StaticBatch, mulberry32, stdMat } from './utils';
+import { barkTexture, broadCard, grassCard, pineCard, plankTexture, signTexture } from './textures';
+import { patchSurface, patchWind } from './shading';
 import type { Quality } from './store';
 
 export interface TreeNode {
@@ -52,23 +55,125 @@ function compose(x: number, y: number, z: number, sx: number, sy: number, sz: nu
   return _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(0, ry, 0)), _s.set(sx, sy, sz));
 }
 
-function pineGeo() {
-  const parts: BufferGeometry[] = [];
-  const add = (r: number, h: number, y: number) => parts.push(new ConeGeometry(r, h, 7).translate(0, y, 0));
-  add(1.35, 2.3, 2.0);
-  add(1.05, 1.9, 3.2);
-  add(0.7, 1.5, 4.2);
+function bufMerge(parts: BufferGeometry[]) {
   return mergeGeometries(parts)!;
 }
-function leafyGeo() {
-  const parts: BufferGeometry[] = [];
-  const add = (r: number, x: number, y: number, z: number) => parts.push(new IcosahedronGeometry(r, 1).translate(x, y, z));
-  add(1.2, 0, 2.5, 0);
-  add(0.9, 0.7, 3.1, 0.3);
-  add(0.85, -0.6, 3.0, -0.4);
-  return mergeGeometries(parts)!;
+function setNormals(g: BufferGeometry, f: (x: number, y: number, z: number, o: Vector3) => void) {
+  const p = g.attributes.position;
+  const n = g.attributes.normal;
+  const o = new Vector3();
+  for (let i = 0; i < p.count; i++) {
+    f(p.getX(i), p.getY(i), p.getZ(i), o);
+    o.normalize();
+    n.setXYZ(i, o.x, o.y, o.z);
+  }
 }
-const trunkGeo = () => new CylinderGeometry(0.16, 0.27, 1.8, 6).translate(0, 0.9, 0);
+function branch(from: Vector3, to: Vector3, r0: number, r1: number, seg = 6) {
+  const dir = to.clone().sub(from);
+  const len = dir.length();
+  const g = new CylinderGeometry(r1, r0, len, seg, 1).translate(0, len / 2, 0);
+  g.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize()));
+  g.translate(from.x, from.y, from.z);
+  return g;
+}
+const upV = new Vector3(0, 1, 0);
+
+/** Layered drooping conifer branches as alpha-tested needle cards. */
+function pineCardsGeo(rng: () => number) {
+  const parts: BufferGeometry[] = [];
+  const tiers = 8;
+  for (let t = 0; t < tiers; t++) {
+    const k = t / (tiers - 1);
+    const y = 1.45 + t * 0.86;
+    const R = 2.55 * Math.pow(1 - k, 0.85) + 0.6;
+    const n = Math.round(10 - k * 4);
+    const layers = k < 0.6 ? 2 : 1;
+    for (let l = 0; l < layers; l++) {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + l * 0.55 + rng() * 0.35;
+        const droop = 0.5 - k * 0.15 + l * 0.22 + rng() * 0.1;
+        const g = new PlaneGeometry(R * 1.0, R * 1.15);
+        g.translate(0, R * 0.575, 0);
+        g.rotateY((rng() - 0.5) * 0.4);
+        g.rotateX(Math.PI / 2 + droop);
+        g.rotateY(a);
+        g.translate(0, y - l * 0.16, 0);
+        const sa = Math.sin(a);
+        const ca = Math.cos(a);
+        setNormals(g, (_x, _y, _z, o) => o.set(sa * 0.5, 0.9, ca * 0.5));
+        parts.push(g);
+      }
+    }
+  }
+  return bufMerge(parts);
+}
+const pineCoreGeo = () => new ConeGeometry(1.2, 6.6, 9).translate(0, 4.5, 0);
+const pineTrunkGeo = () => new CylinderGeometry(0.07, 0.27, 7.8, 8, 3).translate(0, 3.9, 0);
+
+function leafCluster(rng: () => number, centers: Vector3[], radius: number, canopy: Vector3, cards = 6) {
+  const parts: BufferGeometry[] = [];
+  for (const c of centers) {
+    for (let k = 0; k < cards; k++) {
+      const g = new PlaneGeometry(radius * 2, radius * 2);
+      g.rotateX(rng() * Math.PI);
+      g.rotateY(rng() * Math.PI);
+      g.rotateZ(rng() * Math.PI);
+      g.translate(c.x + (rng() - 0.5) * 0.5, c.y + (rng() - 0.5) * 0.5, c.z + (rng() - 0.5) * 0.5);
+      setNormals(g, (x, y, z, o) => o.set(x - canopy.x, (y - canopy.y) * 0.9 + 0.35, z - canopy.z));
+      parts.push(g);
+    }
+  }
+  return bufMerge(parts);
+}
+function broadTree(rng: () => number) {
+  const canopy = new Vector3(0, 4.9, 0);
+  const centers: Vector3[] = [];
+  for (let i = 0; i < 12; i++) {
+    const a = rng() * 6.283;
+    const r = Math.sqrt(rng()) * 2.1;
+    centers.push(new Vector3(Math.cos(a) * r, 4.9 + (rng() - 0.4) * 2.3, Math.sin(a) * r));
+  }
+  const foliage = leafCluster(rng, centers, 1.35, canopy, 5);
+  const wood: BufferGeometry[] = [new CylinderGeometry(0.2, 0.36, 3.4, 8, 3).translate(0, 1.7, 0)];
+  const top = new Vector3(0, 3.3, 0);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * 6.283 + rng();
+    wood.push(branch(top, new Vector3(Math.cos(a) * 1.6, 5.0 + rng() * 0.9, Math.sin(a) * 1.6), 0.16, 0.05, 5));
+  }
+  return { foliage, trunk: bufMerge(wood) };
+}
+function deadTree(rng: () => number) {
+  const parts: BufferGeometry[] = [];
+  const grow = (from: Vector3, dir: Vector3, len: number, rad: number, depth: number) => {
+    const to = from.clone().addScaledVector(dir, len);
+    parts.push(branch(from, to, rad, rad * 0.62, 5));
+    if (depth <= 0) return;
+    const kids = depth > 2 ? 2 : 2 + (rng() < 0.5 ? 1 : 0);
+    for (let i = 0; i < kids; i++) {
+      const d = dir.clone().add(new Vector3(rng() - 0.5, rng() * 0.3, rng() - 0.5).multiplyScalar(1.5)).normalize();
+      grow(to, d, len * (0.62 + rng() * 0.2), rad * 0.6, depth - 1);
+    }
+  };
+  grow(new Vector3(0, 0, 0), upV.clone(), 3.4, 0.28, 3);
+  return bufMerge(parts);
+}
+function rockGeo(seed: number) {
+  const rng = mulberry32(seed);
+  const g = new IcosahedronGeometry(1, 3);
+  const p = g.attributes.position;
+  const v = new Vector3();
+  const o = [rng() * 10, rng() * 10, rng() * 10];
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = Math.sin(v.x * 2.3 + o[0]) * Math.cos(v.y * 2.1 + o[1]) + Math.sin(v.z * 2.7 + o[2]) * 0.6 + Math.sin(v.x * 6 + v.z * 5 + o[1]) * 0.18;
+    const s = 1 + n * 0.17;
+    v.multiplyScalar(s);
+    if (v.y < -0.35) v.y = -0.35 + (v.y + 0.35) * 0.2; // flat bottom
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 
 export class Props {
   group = new Group();
@@ -87,6 +192,7 @@ export class Props {
   private lampMat = new MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffcc55, emissiveIntensity: 0, roughness: 0.5 });
   private chopTrunk!: InstancedMesh;
   private chopLeaf!: InstancedMesh;
+  private chopCore!: InstancedMesh;
   private crateMesh!: InstancedMesh;
   private crateGlow!: InstancedMesh;
   private shake = 0;
@@ -105,8 +211,8 @@ export class Props {
     const nearTH = (x: number, z: number, r: number) => Math.hypot(x - tx, z - tz) < r;
 
     /* ----- forest ----- */
-    const pts: { x: number; z: number; s: number; r: number; leafy: boolean }[] = [];
-    const target = Math.round(520 * qf);
+    const pts: { x: number; z: number; s: number; r: number; kind: number }[] = [];
+    const target = Math.round(500 * qf);
     let tries = 0;
     while (pts.length < target && tries++ < 9000) {
       const x = (rng() * 2 - 1) * (WORLD.playX + 9);
@@ -114,78 +220,127 @@ export class Props {
       if (riverDist(x, z) < 6.5 || nearTH(x, z, 11)) continue;
       const edge = Math.max(Math.abs(x) / WORLD.playX, Math.abs(z) / WORLD.playZ);
       if (rng() > 0.1 + 0.9 * Math.pow(Math.min(1, edge), 2.6)) continue;
-      pts.push({ x, z, s: 0.8 + rng() * 0.9, r: rng() * 6.28, leafy: rng() < 0.28 });
+      const kr = rng();
+      pts.push({ x, z, s: 0.8 + rng() * 0.8, r: rng() * 6.28, kind: kr < 0.56 ? 0 : kr < 0.76 ? 1 : kr < 0.85 ? 2 : 3 });
     }
-    const pines = pts.filter((p) => !p.leafy);
-    const leafy = pts.filter((p) => p.leafy);
-    const trunkMat = new MeshStandardMaterial({ color: 0x5a3b22, roughness: 1 });
-    const mkInst = (geo: BufferGeometry, mat: MeshStandardMaterial, list: typeof pts, colors: number[][], lift = 0, cast = true) => {
+    const barkMap = barkTexture();
+    barkMap.wrapS = barkMap.wrapT = RepeatWrapping;
+    const barkMat = patchSurface(new MeshStandardMaterial({ map: barkMap, roughness: 0.95, bumpMap: barkMap, bumpScale: 3 }), { scale: 2.5, grime: 0.3, bump: 0.5, cloud: true });
+    const deadMat = patchSurface(new MeshStandardMaterial({ color: 0x6d6258, roughness: 1 }), { scale: 3, grime: 0.5, bump: 0.8, cloud: true });
+    const mkFoliage = (map: MeshStandardMaterial['map'], rough = 0.82) =>
+      patchWind(
+        patchSurface(new MeshStandardMaterial({ map, alphaTest: 0.42, side: DoubleSide, roughness: rough, metalness: 0 }), { scale: 0.6, grime: 0.16, bump: 0.12, grain: 0.1, cloud: true, hue: 0.12 }),
+        0.3,
+        1.3,
+        'y',
+        0.13,
+      );
+    const pineMat = mkFoliage(pineCard());
+    const broadMat = mkFoliage(broadCard(false));
+    const autumnMat = mkFoliage(broadCard(true));
+    const mkInst = (geo: BufferGeometry, mat: MeshStandardMaterial, list: typeof pts, tint: () => number[], cast = true, lift = 0) => {
       const im = new InstancedMesh(geo, mat, Math.max(1, list.length));
       im.count = list.length;
       list.forEach((p, i) => {
         im.setMatrixAt(i, compose(p.x, terrainHeight(p.x, p.z) + lift, p.z, p.s, p.s * (0.9 + (p.r % 1) * 0.35), p.s, p.r));
-        const c = colors[Math.floor(rng() * colors.length)];
+        const c = tint();
         im.setColorAt(i, _c.setRGB(c[0], c[1], c[2]));
       });
       im.castShadow = cast;
-      im.receiveShadow = false;
+      im.receiveShadow = true;
       this.group.add(im);
       return im;
     };
-    const pineCols = [[0.05, 0.26, 0.1], [0.07, 0.32, 0.12], [0.04, 0.22, 0.12], [0.1, 0.3, 0.1]];
-    const leafCols = [[0.18, 0.42, 0.1], [0.24, 0.48, 0.12], [0.3, 0.45, 0.1], [0.14, 0.36, 0.1]];
-    mkInst(trunkGeo(), trunkMat, pts, [[1, 1, 1]]);
-    // note: trunk instance colors multiply the material color, so keep them white
-    mkInst(pineGeo(), new MeshStandardMaterial({ roughness: 0.95, flatShading: true }), pines, pineCols);
-    mkInst(leafyGeo(), new MeshStandardMaterial({ roughness: 0.95, flatShading: true }), leafy, leafCols);
+    const white = () => [1, 1, 1];
+    const pines = pts.filter((p) => p.kind === 0);
+    const greens = pts.filter((p) => p.kind === 1);
+    const autumns = pts.filter((p) => p.kind === 2);
+    const dead = pts.filter((p) => p.kind === 3);
+    const pineTint = () => {
+      const k = 0.7 + rng() * 0.45;
+      const dry = rng() < 0.18 ? 0.35 : 0;
+      return [k * (1 + dry), k * (1 - dry * 0.3), k * (1 - dry)];
+    };
+    mkInst(pineTrunkGeo(), barkMat, pines, white);
+    mkInst(pineCoreGeo(), patchSurface(new MeshStandardMaterial({ color: 0x14301a, roughness: 1 }), { scale: 1, grime: 0.3, bump: 0.2 }), pines, () => { const k = 0.7 + rng() * 0.5; return [k, k, k]; }, false);
+    mkInst(pineCardsGeo(rng), pineMat, pines, pineTint);
+    const bt = broadTree(rng);
+    const bTint = () => { const k = 0.75 + rng() * 0.5; return [k * (0.9 + rng() * 0.2), k, k * 0.85]; };
+    mkInst(bt.trunk, barkMat, [...greens, ...autumns], white);
+    mkInst(bt.foliage, broadMat, greens, bTint);
+    mkInst(bt.foliage, autumnMat, autumns, bTint);
+    mkInst(deadTree(rng), deadMat, dead, () => { const k = 0.7 + rng() * 0.5; return [k, k, k]; });
 
     /* ----- rocks ----- */
     const rocks: typeof pts = [];
     tries = 0;
-    while (rocks.length < Math.round(110 * qf) && tries++ < 3000) {
+    while (rocks.length < Math.round(120 * qf) && tries++ < 3000) {
       const x = (rng() * 2 - 1) * WORLD.playX;
       const z = (rng() * 2 - 1) * WORLD.playZ;
       if (Math.abs(x) < 10 && Math.abs(z) < 8) continue;
       if (nearTH(x, z, 5)) continue;
-      rocks.push({ x, z, s: 0.4 + rng() * 1.3, r: rng() * 6.28, leafy: false });
+      rocks.push({ x, z, s: 0.4 + rng() * 1.3, r: rng() * 6.28, kind: Math.floor(rng() * 3) });
     }
-    const rockIm = new InstancedMesh(new IcosahedronGeometry(1, 0), new MeshStandardMaterial({ roughness: 1, flatShading: true }), rocks.length);
-    rocks.forEach((p, i) => {
-      const h = terrainHeight(p.x, p.z);
-      rockIm.setMatrixAt(i, compose(p.x, h + p.s * 0.2, p.z, p.s * 1.2, p.s * 0.7, p.s, p.r));
-      const g = 0.32 + rng() * 0.2;
-      rockIm.setColorAt(i, _c.setRGB(g, g * 0.98, g * 0.92));
-    });
-    rockIm.castShadow = true;
-    rockIm.receiveShadow = true;
-    this.group.add(rockIm);
+    const rockMat = patchSurface(new MeshStandardMaterial({ color: 0x8a8780, roughness: 0.92, metalness: 0.02 }), { scale: 1.7, grime: 0.6, bump: 2.2, grain: 0.5, cloud: true, hue: 0.1 });
+    for (let kind = 0; kind < 3; kind++) {
+      const list = rocks.filter((q) => q.kind === kind);
+      const im = new InstancedMesh(rockGeo(100 + kind * 17), rockMat, Math.max(1, list.length));
+      im.count = list.length;
+      list.forEach((p, i) => {
+        const h = terrainHeight(p.x, p.z);
+        im.setMatrixAt(i, compose(p.x, h + p.s * 0.12, p.z, p.s * 1.15, p.s * (0.65 + (p.r % 1) * 0.3), p.s, p.r));
+        const g = 0.62 + rng() * 0.5;
+        im.setColorAt(i, _c.setRGB(g, g * 0.98, g * (0.9 + rng() * 0.12)));
+      });
+      im.castShadow = true;
+      im.receiveShadow = true;
+      this.group.add(im);
+    }
 
-    /* ----- grass tufts ----- */
-    const tuftGeo = mergeGeometries([
-      new ConeGeometry(0.07, 0.6, 3).translate(0, 0.3, 0),
-      new ConeGeometry(0.06, 0.45, 3).rotateZ(0.35).translate(0.08, 0.22, 0),
-      new ConeGeometry(0.06, 0.5, 3).rotateZ(-0.35).translate(-0.08, 0.24, 0.03),
-    ])!;
-    const gN = Math.round(1700 * qf);
-    const tufts = new InstancedMesh(tuftGeo, new MeshStandardMaterial({ roughness: 1, side: DoubleSide }), gN);
+    /* ----- grass (crossed alpha cards, wind-animated) ----- */
+    const patch = bufMerge(
+      [0, 1, 2].map((i) => {
+        const g = new PlaneGeometry(1.3, 1.0);
+        g.translate(0, 0.5, 0);
+        g.rotateY((i * Math.PI) / 3);
+        setNormals(g, () => {}); // placeholder; overwritten below
+        return g;
+      }),
+    );
+    setNormals(patch, (_x, _y, _z, o) => o.set(0, 1, 0));
+    const grassMat = patchWind(
+      patchSurface(new MeshStandardMaterial({ map: grassCard(), alphaTest: 0.4, side: DoubleSide, roughness: 1, metalness: 0 }), { scale: 0.7, grime: 0.2, bump: 0, grain: 0.1, cloud: true, hue: 0.2 }),
+      0.38,
+      2.1,
+      'uv',
+    );
+    const gN = Math.round(9000 * qf);
+    const tufts = new InstancedMesh(patch, grassMat, gN);
     let gi = 0;
     tries = 0;
-    while (gi < gN && tries++ < gN * 6) {
-      const x = (rng() * 2 - 1) * WORLD.playX;
-      const z = (rng() * 2 - 1) * WORLD.playZ;
+    while (gi < gN && tries++ < gN * 5) {
+      const x = (rng() * 2 - 1) * (WORLD.playX + 4);
+      const z = (rng() * 2 - 1) * (WORLD.playZ + 4);
       const h = terrainHeight(x, z);
-      if (h < 0.35 || riverDist(x, z) < 4 || h > 3) continue;
-      const s = 0.8 + rng() * 1.1;
-      tufts.setMatrixAt(gi, compose(x, h - 0.02, z, s, s * (0.8 + rng() * 0.6), s, rng() * 6.28));
-      tufts.setColorAt(gi, _c.setRGB(0.18 + rng() * 0.2, 0.38 + rng() * 0.2, 0.08 + rng() * 0.08));
+      if (h < 0.3 || riverDist(x, z) < 3.2 || h > 3.4) continue;
+      const s = 0.7 + rng() * 1.0;
+      tufts.setMatrixAt(gi, compose(x, h - 0.03, z, s, s * (0.7 + rng() * 0.7), s, rng() * 6.28));
+      const k = 0.65 + rng() * 0.5;
+      tufts.setColorAt(gi, _c.setRGB(k * (0.95 + rng() * 0.2), k, k * 0.8));
       gi++;
     }
     tufts.count = gi;
+    tufts.receiveShadow = true;
     this.group.add(tufts);
 
     /* ----- reeds along the banks ----- */
-    const reedN = Math.round(260 * qf);
-    const reeds = new InstancedMesh(new CylinderGeometry(0.025, 0.04, 1.8, 4).translate(0, 0.9, 0), new MeshStandardMaterial({ color: 0xb7b36a, roughness: 1 }), reedN);
+    const reedN = Math.round(300 * qf);
+    const reedMat = patchWind(new MeshStandardMaterial({ color: 0xb7b36a, roughness: 0.9 }), 0.3, 1.8, 'y', 0.5);
+    const reedGeo = bufMerge([
+      new CylinderGeometry(0.018, 0.035, 1.9, 4).translate(0, 0.95, 0),
+      new CylinderGeometry(0.05, 0.05, 0.28, 6).translate(0, 1.75, 0),
+    ]);
+    const reeds = new InstancedMesh(reedGeo, reedMat, reedN);
     let ri = 0;
     tries = 0;
     while (ri < reedN && tries++ < reedN * 40) {
@@ -200,14 +355,14 @@ export class Props {
       ri++;
     }
     reeds.count = ri;
+    reeds.castShadow = true;
     this.group.add(reeds);
 
     /* ----- wrecks, barrels, tents (merged) ----- */
     this.buildClutter(rng, tx, tz);
 
-    /* ----- choppable trees ----- */
+    /* ----- choppable trees (autumn gold pines) ----- */
     const chopN = 26;
-    const chopGeoT = trunkGeo();
     tries = 0;
     while (this.trees.length < chopN && tries++ < 4000) {
       const x = (rng() * 2 - 1) * (WORLD.playX - 8);
@@ -215,18 +370,25 @@ export class Props {
       const d = Math.hypot(x, z);
       if (riverDist(x, z) < 5 || d < 14 || d > 50 || nearTH(x, z, 9)) continue;
       if (this.trees.some((t) => Math.hypot(t.x - x, t.z - z) < 6)) continue;
-      this.trees.push({ x, z, scale: 1.05 + rng() * 0.45, hp: 1, felled: false, shake: 0, rot: rng() * 6.28 });
+      this.trees.push({ x, z, scale: 0.75 + rng() * 0.3, hp: 1, felled: false, shake: 0, rot: rng() * 6.28 });
     }
-    this.chopTrunk = new InstancedMesh(chopGeoT, new MeshStandardMaterial({ color: 0x8a5a30, roughness: 1 }), this.trees.length);
-    this.chopLeaf = new InstancedMesh(pineGeo(), new MeshStandardMaterial({ roughness: 0.9, flatShading: true }), this.trees.length);
+    this.chopTrunk = new InstancedMesh(pineTrunkGeo(), barkMat, this.trees.length);
+    this.chopLeaf = new InstancedMesh(pineCardsGeo(rng), mkFoliage(pineCard(true)), this.trees.length);
+    this.chopCore = new InstancedMesh(pineCoreGeo(), patchSurface(new MeshStandardMaterial({ color: 0x5a3414, roughness: 1 }), { scale: 1, grime: 0.3, bump: 0.2 }), this.trees.length);
     this.chopTrunk.castShadow = this.chopLeaf.castShadow = true;
-    this.trees.forEach((_t, i) => this.chopLeaf.setColorAt(i, _c.setRGB(0.85 + (i % 3) * 0.05, 0.5 + (i % 4) * 0.08, 0.08)));
-    this.group.add(this.chopTrunk, this.chopLeaf);
+    this.trees.forEach((_t, i) => {
+      this.chopLeaf.setColorAt(i, _c.setRGB(1.1 + (i % 3) * 0.08, 0.95 + (i % 4) * 0.05, 0.8));
+      this.chopCore.setColorAt(i, _c.setRGB(1, 1, 1));
+      this.chopTrunk.setColorAt(i, _c.setRGB(1, 1, 1));
+    });
+    this.group.add(this.chopTrunk, this.chopLeaf, this.chopCore);
     this.refreshTrees();
 
     /* ----- loot crates ----- */
     const CN = 18;
-    this.crateMesh = new InstancedMesh(new BoxGeometry(0.8, 0.6, 0.8), new MeshStandardMaterial({ roughness: 0.7, metalness: 0.2 }), CN);
+    const crateMap = plankTexture(false);
+    const crateMat = patchSurface(new MeshStandardMaterial({ map: crateMap, bumpMap: crateMap, bumpScale: 2, roughness: 0.75, metalness: 0.1 }), { scale: 6, grime: 0.2, bump: 0.3 });
+    this.crateMesh = new InstancedMesh(new BoxGeometry(0.8, 0.6, 0.8), crateMat, CN);
     this.crateMesh.castShadow = true;
     const glowGeo = new CircleGeometry(1.1, 20);
     glowGeo.rotateX(-Math.PI / 2);
@@ -293,11 +455,12 @@ export class Props {
 
   private buildTreehouse(tx: number, tz: number) {
     const b = new StaticBatch();
-    const plank = new MeshStandardMaterial({ map: plankTexture(), roughness: 0.9 });
-    const darkPlank = new MeshStandardMaterial({ map: plankTexture(true), roughness: 0.9 });
-    const trunk = stdMat(0x5a3b22, 1);
-    const leaf = new MeshStandardMaterial({ color: 0x1f6b2f, roughness: 0.95, flatShading: true });
-    const leaf2 = new MeshStandardMaterial({ color: 0x2f8a3a, roughness: 0.95, flatShading: true });
+    const pm = plankTexture();
+    const dm = plankTexture(true);
+    const plank = patchSurface(new MeshStandardMaterial({ map: pm, bumpMap: pm, bumpScale: 2.5, roughness: 0.85 }), { scale: 4, grime: 0.25, bump: 0.3, cloud: true });
+    const darkPlank = patchSurface(new MeshStandardMaterial({ map: dm, bumpMap: dm, bumpScale: 2.5, roughness: 0.85 }), { scale: 4, grime: 0.25, bump: 0.3, cloud: true });
+    const bk = barkTexture();
+    const trunk = patchSurface(new MeshStandardMaterial({ map: bk, bumpMap: bk, bumpScale: 3, roughness: 0.95 }), { scale: 2.5, grime: 0.3, bump: 0.5, cloud: true });
     const roof = stdMat(0xe0508a, 0.7);
     const wall = stdMat(0x59c9c0, 0.8);
     const gy = terrainHeight(tx, tz);
@@ -327,15 +490,7 @@ export class Props {
     const lx = tx - 2.95;
     for (const s of [-1, 1]) b.add(G.box, trunk, lx, gy + 2.3, tz + s * 0.38, 0.09, 4.8, 0.09);
     for (let i = 0; i < 9; i++) b.add(G.box, trunk, lx, gy + 0.35 + i * 0.52, tz, 0.07, 0.07, 0.8);
-    // canopy (kept off the camera sight line so the platform stays visible from above)
-    const canopy: [number, number, number, number, MeshStandardMaterial][] = [
-      [-3.2, 9.4, -3.2, 3.0, leaf],
-      [3.4, 9.0, -3.0, 2.6, leaf2],
-      [-3.4, 9.2, 3.0, 2.7, leaf2],
-      [0, 11, 0, 2.8, leaf],
-      [-4.6, 8.0, 0, 2.2, leaf],
-    ];
-    for (const [ox, oy, oz, r, m] of canopy) b.add(G.ico, m, tx + ox, gy + oy, tz + oz, r, r * 0.85, r);
+    // canopy built later from leaf cards (kept off the camera sight line so the platform stays visible)
     // string lights
     for (let i = -2; i <= 2; i++) {
       b.add(G.sphLow, this.lampMat, tx + i * 1.2, PY + 0.95, tz + 2.6, 0.09, 0.09, 0.09);
@@ -344,8 +499,25 @@ export class Props {
     }
     const root = new Group();
     root.add(b.build());
+    const crng = mulberry32(5);
+    const cen = [[-3.2, 9.4, -3.2], [3.4, 9.0, -3.0], [-3.4, 9.2, 3.0], [0, 11, 0], [-4.6, 8.0, 0], [2.2, 10.2, 2.4], [-1.5, 10.4, -1.2], [3.8, 8.4, 2.6]].map((c) => new Vector3(c[0], gy + c[1], c[2] + 0 + 0));
+    cen.forEach((c) => c.set(c.x + tx, c.y, c.z + tz));
+    const canopyGeo = leafCluster(crng, cen, 2.3, new Vector3(tx, gy + 10, tz), 6);
+    const canopyMat = patchWind(
+      patchSurface(new MeshStandardMaterial({ map: broadCard(false), alphaTest: 0.42, side: DoubleSide, roughness: 0.82 }), { scale: 0.6, grime: 0.16, bump: 0.1, cloud: true }),
+      0.25, 1.2, 'y', 0.05,
+    );
+    const canopy = new Mesh(canopyGeo, canopyMat);
+    canopy.castShadow = true;
+    root.add(canopy);
+    const trunkBranches = new Mesh(
+      bufMerge(cen.slice(0, 5).map((c) => branch(new Vector3(tx, gy + 7.5, tz), new Vector3(c.x, c.y - 0.8, c.z), 0.22, 0.07, 5))),
+      trunk,
+    );
+    trunkBranches.castShadow = true;
+    root.add(trunkBranches);
     // sign
-    const sign = new Mesh(new PlaneGeometry(2.4, 0.9), new MeshStandardMaterial({ map: signTexture(['NO FATTIES', 'ALLOWED'], '#d94f8a'), roughness: 0.8, side: DoubleSide }));
+    const sign = new Mesh(new PlaneGeometry(2.4, 0.9), new MeshStandardMaterial({ map: signTexture(['NO FATTIES', 'ALLOWED'], '#d94f8a'), roughness: 0.75, side: DoubleSide }));
     sign.position.set(tx - 2.68, PY + 0.62, tz);
     sign.rotation.y = -Math.PI / 2;
     sign.castShadow = true;
@@ -370,10 +542,13 @@ export class Props {
       const sh = t.shake > 0 ? Math.sin(t.shake * 60) * t.shake * 0.4 : 0;
       const ts = t.felled ? 0.22 : t.scale;
       this.chopTrunk.setMatrixAt(i, compose(t.x + sh, gy, t.z, t.scale * (t.felled ? 1.1 : 1), ts, t.scale * (t.felled ? 1.1 : 1), t.rot));
-      this.chopLeaf.setMatrixAt(i, compose(t.x + sh, gy, t.z, t.felled ? 0 : t.scale, t.felled ? 0 : t.scale * (0.6 + 0.4 * (t.hp * 0.5 + 0.5)), t.felled ? 0 : t.scale, t.rot));
+      const lm = compose(t.x + sh, gy, t.z, t.felled ? 0 : t.scale, t.felled ? 0 : t.scale * (0.6 + 0.4 * (t.hp * 0.5 + 0.5)), t.felled ? 0 : t.scale, t.rot);
+      this.chopLeaf.setMatrixAt(i, lm);
+      this.chopCore.setMatrixAt(i, lm);
     });
     this.chopTrunk.instanceMatrix.needsUpdate = true;
     this.chopLeaf.instanceMatrix.needsUpdate = true;
+    this.chopCore.instanceMatrix.needsUpdate = true;
     if (this.chopLeaf.instanceColor) this.chopLeaf.instanceColor.needsUpdate = true;
   }
 

@@ -49,3 +49,12 @@ Plain object (`Run` in game.ts): resources, hull, ship level, night, phase/timer
 * **New zombie type**: add to `ZType`/`ZDEFS`; choose it in `ZombieManager.beginNight`; scale/color handled by `spawn`. Special behaviours go in `ZombieManager.update`.
 * **New weapon**: append to `WEAPONS`; give it a model in `characters.setWeaponModel` and a sound key in `audio.ts` (id must match a `SoundName`, or change the `play` call in `Player.fire`).
 * **Story beats**: `config.TAUNTS`, `NIGHT_CRIES`, `cinematic.lines`.
+
+## Session 2 additions
+```
+Lighting ──> Sky dome (sky.ts) ──PMREM──> scene.environment (IBL)
+shading.ts FX uniforms {time, cloud, wind, wet} ──> patchSurface / patchWind (onBeforeCompile)
+WorldEvents (worldfx.ts) ──> light.bloodT / light.stormT, Rain, SupplyDrop, thunder, lootMul/speedMul/countMul
+ZombieManager ──> Projectiles.spit() (acid) , Decals.add(), explode() (bloater)
+Composer (High): Render → Bloom → Output → Grade(post.ts)
+```

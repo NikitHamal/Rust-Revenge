@@ -27,7 +27,9 @@ import {
   turretStats,
   type BuildingType,
 } from './config';
-import { G, StaticBatch, paintTexture, plankTexture, rustTexture, stdMat } from './utils';
+import { G, StaticBatch, stdMat } from './utils';
+import { paintTexture, plankTexture, rustTexture } from './textures';
+import { patchSurface } from './shading';
 import type { Game } from './game';
 import type { Zombie } from './zombies';
 
@@ -162,10 +164,10 @@ export class Ship {
   private lampMat = new MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffcc55, emissiveIntensity: 0, roughness: 0.5 });
   private winMat = new MeshStandardMaterial({ color: 0x1b3a52, emissive: 0xffd88a, emissiveIntensity: 0, roughness: 0.2, metalness: 0.5 });
   private lights: PointLight[] = [];
-  private rustTex = rustTexture();
-  private paintTex = paintTexture();
-  private plank = plankTexture(true);
-  private plankLight = plankTexture(false);
+  private rustTex = (() => { const t = rustTexture().clone(); t.repeat.set(0.16, 0.2); t.needsUpdate = true; return t; })();
+  private paintTex = (() => { const t = paintTexture().clone(); t.repeat.set(0.2, 0.2); t.needsUpdate = true; return t; })();
+  private plank = (() => { const t = plankTexture(true).clone(); t.repeat.set(0.3, 0.3); t.needsUpdate = true; return t; })();
+  private plankLight = (() => { const t = plankTexture(false).clone(); t.repeat.set(0.3, 0.3); t.needsUpdate = true; return t; })();
   private selected = -1;
   private flameAcc = 0;
   private padsOn = true;
@@ -247,13 +249,15 @@ export class Ship {
     geo.translate(0, DECK_Y - 2.6, 0);
 
     // materials per level
-    const rustMat = new MeshStandardMaterial({ map: this.rustTex, roughness: 0.85, metalness: 0.35, color: lv === 2 ? 0xc9b3a0 : 0xffffff });
-    const steel = new MeshStandardMaterial({ color: lv === 3 ? 0x6c7681 : 0x23405f, roughness: 0.5, metalness: 0.6 });
-    const paint = new MeshStandardMaterial({ map: this.paintTex, roughness: 0.35, metalness: 0.2 });
+    const rustMat = patchSurface(new MeshStandardMaterial({ map: this.rustTex, bumpMap: this.rustTex, bumpScale: 4, roughness: 0.78, metalness: 0.4, color: lv === 2 ? 0xd8c4b0 : 0xffffff }), { scale: 2.2, grime: 0.35, bump: 0.8, cloud: false });
+    const steel = patchSurface(new MeshStandardMaterial({ color: lv === 3 ? 0x7d8895 : 0x2c4d73, roughness: 0.38, metalness: 0.75 }), { scale: 3, grime: 0.2, bump: 0.5, rough: 0.3 });
+    const paint = patchSurface(new MeshStandardMaterial({ map: this.paintTex, roughness: 0.22, metalness: 0.25 }), { scale: 4, grime: 0.08, bump: 0.2, rough: 0.1 });
     const hullMat = lv <= 2 ? rustMat : lv === 5 ? paint : steel;
     const deckMat = new MeshStandardMaterial({
-      map: lv <= 2 ? this.plank : lv === 5 ? this.plankLight : null,
-      color: lv === 3 ? 0x59606a : lv === 4 ? 0x7e8791 : 0xffffff,
+      map: lv <= 2 ? this.plankLight : lv === 5 ? this.plankLight : null,
+      bumpMap: lv <= 2 ? this.plankLight : lv === 5 ? this.plankLight : null,
+      bumpScale: 2.5,
+      color: lv === 3 ? 0x59606a : lv === 4 ? 0x7e8791 : lv <= 2 ? 0xd6bfa8 : 0xffffff,
       roughness: 0.85,
       metalness: lv === 3 || lv === 4 ? 0.3 : 0,
     });

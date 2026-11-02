@@ -5,11 +5,11 @@
 type SoundName =
   | 'pistol' | 'smg' | 'shotgun' | 'minigun' | 'swing' | 'flame' | 'tesla' | 'hit' | 'zdie' | 'groan'
   | 'pickup' | 'build' | 'upgrade' | 'slam' | 'hurt' | 'scream' | 'splash' | 'kick' | 'alarm' | 'win'
-  | 'lose' | 'click' | 'chop' | 'boom' | 'error' | 'dawn';
+  | 'lose' | 'click' | 'chop' | 'boom' | 'error' | 'dawn' | 'thunder' | 'spit' | 'splat';
 
 const MIN_GAP: Partial<Record<SoundName, number>> = {
   pistol: 0.05, smg: 0.06, shotgun: 0.1, minigun: 0.05, flame: 0.12, tesla: 0.1, hit: 0.045, zdie: 0.06,
-  groan: 0.35, pickup: 0.05, chop: 0.2, swing: 0.08,
+  groan: 0.35, pickup: 0.05, chop: 0.2, swing: 0.08, spit: 0.12, splat: 0.08, thunder: 0.5,
 };
 
 class AudioSys {
@@ -169,6 +169,9 @@ class AudioSys {
       case 'dawn': [392, 494, 587, 784].forEach((f, i) => this.tone(f, 0.5, 'sine', 0.14 * v, undefined, i * 0.12)); break;
       case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.4, 'triangle', 0.2 * v, undefined, i * 0.14)); break;
       case 'lose': [330, 262, 208, 147].forEach((f, i) => this.tone(f, 0.6, 'sawtooth', 0.14 * v, f * 0.8, i * 0.25)); break;
+      case 'thunder': this.noise(1.8, 0.7 * v, 380, 0.5, 'lowpass', 0, 60); this.tone(48, 1.4, 'sine', 0.5 * v, 28); this.noise(0.6, 0.35 * v, 900, 0.6, 'lowpass', 0.25, 120); break;
+      case 'spit': this.tone(520, 0.22, 'sawtooth', 0.12 * v, 140); this.noise(0.16, 0.2 * v, 2200, 1.5, 'bandpass'); break;
+      case 'splat': this.noise(0.22, 0.4 * v, 1100, 0.7, 'bandpass', 0, 200); this.tone(180, 0.12, 'sine', 0.2 * v, 60); break;
       case 'click': this.tone(520, 0.05, 'square', 0.08 * v, 300); break;
       case 'error': this.tone(140, 0.18, 'square', 0.14 * v, 100); break;
     }

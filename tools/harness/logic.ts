@@ -22,7 +22,7 @@ for (let n = 0; n < 6000; n++) {
   step(30);
   g.player.trySlam();
   g.run.hull = g.run.hullMax;
-  if (n % 300 === 0) console.log(n, g.screen, g.running, g.run.phase, 'night', g.run.night, 'z', g.zm.list.length, 'q', g.zm.queue.length, 'alive', g.zm.alive, 'nc', g.run.nightClock.toFixed(0), 'sieging', g.run.sieging);
+  if (n % 300 === 0) console.log(n, g.screen, g.running, g.run.phase, 'night', g.run.night, 'z', g.zm.list.length, 'q', g.zm.queue.length, 'alive', g.zm.alive, 'nc', g.run.nightClock.toFixed(0), 'sieging', g.run.sieging, g.zm.list.filter((z:any)=>!z.dead).slice(0,4).map((z:any)=>z.type+'@'+z.x.toFixed(0)+','+z.z.toFixed(0)+(z.mode?'h':'w')+z.tgt+'n'+(z.night?1:0)+' hp'+z.hp.toFixed(0)).join(' '));
   if (g.screen === 'ended') { console.log('ended ui=', getUI().screen, 'night', g.run.night); break; }
   if (g.run.phase === 'day') { g.run.timer = 0.1; if (g.run.shipLevel < 5) g.upgradeShip(); }
 }

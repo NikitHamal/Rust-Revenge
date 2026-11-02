@@ -27,6 +27,10 @@ export class Player {
   swingT = 0;
   slamT = 0;
   slamCd = 0;
+  dashCd = 0;
+  dashT = 0;
+  dashX = 0;
+  dashZ = 0;
   invuln = 0;
   phase = 0;
   chopT = 0;
@@ -66,6 +70,8 @@ export class Player {
     this.vx = this.vz = 0;
     this.slamT = 0;
     this.slamCd = 0;
+    this.dashCd = 0;
+    this.dashT = 0;
     this.invuln = 1;
     this.h.root.rotation.set(0, 0, 0);
     this.h.root.visible = true;
@@ -80,6 +86,7 @@ export class Player {
     g.fx.particles.burst(this.x, this.y + 1.2, this.z, 6, 3, 0xb01818, 0.1, 0.5, 2);
     g.audio.play('hurt', 0.8);
     g.shake(0.25);
+    g.hurtFlash = Math.min(1, 0.45 + dmg * 0.02);
     const d = Math.hypot(this.x - fx, this.z - fz) || 1;
     this.vx += ((this.x - fx) / d) * 2.5;
     this.vz += ((this.z - fz) / d) * 2.5;
@@ -127,6 +134,8 @@ export class Player {
     const g = this.game;
     this.invuln = Math.max(0, this.invuln - dt);
     this.slamCd = Math.max(0, this.slamCd - dt);
+    this.dashCd = Math.max(0, this.dashCd - dt);
+    this.dashT = Math.max(0, this.dashT - dt);
     const root = this.h.root;
 
     if (!this.alive) {
@@ -154,9 +163,25 @@ export class Player {
     const onDeck = g.ship.onDeck(this.x, this.z);
     const inWater = !onDeck && h < -0.06;
     const base = 5.1 * (1 + 0.05 * g.run.up.speed) * (inWater ? 0.62 : 1) * (this.slamT > 0 ? 0.25 : 1) * (this.chopT > 0 ? 0.9 : 1);
+    // Shift = dash (short burst with i-frames)
+    if (g.input.keys.has('shift') && this.dashCd <= 0 && this.slamT <= 0 && (mv.x !== 0 || mv.z !== 0)) {
+      const l = Math.hypot(mv.x, mv.z) || 1;
+      this.dashX = mv.x / l;
+      this.dashZ = mv.z / l;
+      this.dashT = 0.2;
+      this.dashCd = 2.4;
+      this.invuln = Math.max(this.invuln, 0.3);
+      g.audio.play('swing', 0.7);
+      g.fx.particles.burst(this.x, this.y + 0.3, this.z, 10, 3, 0xd8d0b8, 0.14, 0.45, 1);
+    }
     const k = Math.min(1, dt * 11);
-    this.vx += (mv.x * base - this.vx) * k;
-    this.vz += (mv.z * base - this.vz) * k;
+    if (this.dashT > 0) {
+      this.vx = this.dashX * 15;
+      this.vz = this.dashZ * 15;
+    } else {
+      this.vx += (mv.x * base - this.vx) * k;
+      this.vz += (mv.z * base - this.vz) * k;
+    }
     this.x = clamp(this.x + this.vx * dt, -WORLD.playX, WORLD.playX);
     this.z = clamp(this.z + this.vz * dt, -WORLD.playZ, WORLD.playZ);
     this.speedNow = Math.hypot(this.vx, this.vz);

@@ -57,3 +57,11 @@ Karen & Chloe taunt from the platform; lines depend on ship tier (mockery → gr
 * Night 4-6: first siege + boss at 5 → requires tier 2-3 ship and mixed turrets.
 * Night 7-10: 100+ zombies, brutes, double boss at night 10 → needs tier 4-5, tesla/flame, upgraded weapon.
 * Idle-player probe (`tools/harness/balance.ts`): 4 low-level guns survive to ~night 8-9.
+
+## Session 2 design additions
+* **Spitter** — 55 hp, ranged acid (hull 7 / player 9). Stops ~8.5 m from target; closer as the night drags on. Priority target for turrets/player.
+* **Bloater** — 170 hp, slow, 1.7× wide. Explodes (R 5.2) on death or contact: 34 hull / 30 player. Kill at range.
+* **Blood Moon** (nights 3/6/9/10): ×1.35 zombies, ×1.1 speed, ×1.6 scrap from kills.
+* **Thunderstorm** (nights 2/5/8 + 18% random later): rain, lightning, wet surfaces, shorter fog.
+* **Supply drop** (days ≥2, 70%): collect within 2.6 m → scrap 110+28n, wood 45+7n, +40% HP.
+* **Dash** (SHIFT): 15 m/s for 0.2 s, 0.3 s i-frames, 2.4 s cooldown.

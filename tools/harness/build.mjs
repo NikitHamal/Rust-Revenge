@@ -29,7 +29,7 @@ await esbuild.build({
   ],
   banner: {
     js: `
-const ctx2d = new Proxy({}, { get: (t, k) => k === 'createImageData' ? (w,h)=>({data:new Uint8ClampedArray(w*h*4)}) : k==='getImageData'?(...a)=>({data:new Uint8ClampedArray(4)}): (()=>{}), set: () => true });
+const ctx2d = new Proxy({}, { get: (t, k) => k === 'createImageData' ? (w,h)=>({data:new Uint8ClampedArray(w*h*4)}) : k==='getImageData'?(...a)=>({data:new Uint8ClampedArray(4)}): (()=>ctx2d), set: () => true });
 class FakeEl { style={}; children=[]; clientWidth=1280; clientHeight=720; width=0; height=0; className=''; textContent='';
   appendChild(c){this.children.push(c);return c;} remove(){} getContext(){return ctx2d;} addEventListener(){} removeEventListener(){} getBoundingClientRect(){return {left:0,top:0,width:1280,height:720}} }
 globalThis.FakeEl = FakeEl;

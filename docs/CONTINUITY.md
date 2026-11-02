@@ -1,42 +1,52 @@
 # Continuity log
 
-_Last updated: end of session 1 (initial full build)._
+_Last updated: end of session 2 (realism overhaul + new mechanics)._
 
 ## State of the project
-**Feature-complete first version.** Everything below exists, compiles (`tsc` strict clean), builds, and ran end-to-end in the headless logic harness
-(intro → 10 nights incl. sieges & bosses → victory → both endings → endless → save/load) with **0 runtime exceptions**.
+Session 1 shipped the feature-complete low-poly game. **Session 2 rebuilt the entire look and added new gameplay layers.**
+Everything compiles (`tsc` strict clean), builds, and the headless logic harness plays intro → 10 nights (incl. blood moons, spitters, bloaters,
+sieges, bosses) → victory → both endings → endless → save/load with **0 exceptions**. Session 2 also *looked at the game* (SwiftShader screenshots, see `VISUAL_QA.md`).
 
-Implemented: menu, scripted intro cinematic (~39 s, skippable), day/night loop, 10-night campaign + endless, 5 ship tiers with distinct models, 6 buildings × 3 levels,
-5 weapons, 4 training stats, slam ability, zombies (4 types, instanced), boss nights, treehouse sieges, NPC taunts & endings, loot crates, choppable trees,
-minimap, HUD, build/ship/workshop/settings/help panels, pause, game over, autosave/continue, procedural audio + music, 3 quality tiers + adaptive downgrade,
-touch controls (joystick, pinch zoom).
+### Session 2 – what changed
+**Rendering / look**
+* Procedural **sky dome** (gradient, sun/moon, drifting clouds, stars) + **image-based lighting** baked from it (PMREM) → real PBR reflections on metal/water/skin.
+* `shading.ts`: world-space **grime / micro-bump / roughness / cloud shadows / wetness** injected into every static material; **wind sway** for grass, foliage, reeds.
+* `textures.ts`: rust plates w/ rivets & streaks, weathered planks, bark, needle & leaf cards, grass blades, skin, faces, fabrics (knit/denim/torn), ground decals.
+* **Terrain**: 400×320 mesh, richer palette (lush/dry grass, loam, wet sand, mud), cloud shadows, detail bump.
+* **Water**: layered waves + noise ripples, sky/cloud reflection, caustics in shallows, shoreline foam, sun glitter, rain rings.
+* **Vegetation**: card-based conifers (drooping layered branches), broadleaf (green/autumn), dead trees, 9k wind-animated grass patches, displaced boulders, cattails.
+* **Characters**: `loft()` anatomical bodies (fat Bruno with belly/jowls, Chloe, Karen), painted faces, hair meshes, glasses/jewelry, jointed elbows & knees, hands with fingers,
+  better weapon models. **Zombie horde**: 12 instanced parts per zombie (torn-cloth/skin textures, faces, bent knees/elbows), per-type body shapes.
+* **Post**: bloom + final grade (vignette, chromatic aberration, split-tone, grain, hurt flash, blood-moon tint).
+* Ship: rust/paint/plank PBR with bump, treehouse rebuilt with leaf-card canopy.
 
-## ⚠️ Honest caveats (read before assuming things are polished)
-1. **The visuals were never seen in a real GPU browser during session 1** (sandbox had no GPU/Chromium libs). Code paths were verified headlessly with a stub
-   renderer; shaders (water), lighting intensities, camera framings in the cinematic, and overall look are **unverified by eye**.
-   First task next session: open the game, eyeball every screen, and tune (see HANDOVER → "First 30 minutes").
-2. Cinematic coordinates are derived from `riverCenter/riverHalfWidth` at runtime; if the world shape changes, re-check `Cinematic` anchors (`W`, `chloeHide`, `bKeys`…).
-3. Audio is purely synthesized — functional but not "produced". Mixing levels untested by ear.
-4. Mobile: layout and joystick are implemented but untested on real devices.
+**Gameplay**
+* New zombies: **Spitter** (hunched, glowing throat, stays ~8 m away and lobs acid at hull/player/treehouse; range shrinks late in a night) and **Bloater** (swollen, explodes on death/contact: AoE to player + hull).
+* **Blood Moon** nights (3, 6, 9, 10): +35% horde, +10% speed, +60% scrap loot, red sky/tint. **Thunderstorm** nights (2, 5, 8 + random): GPU rain, lightning, thunder, wet surfaces. Random **drizzle** days.
+* **Supply drops** (days ≥2, 70%): parachuting crate + beam, big loot + medkit; minimap marker.
+* **Dash** (SHIFT, 2.4 s cd, i-frames). Blood/acid **decals**. Night can end with ≤6 stragglers after 260 s (prevents stalls).
+
+## ⚠️ Honest caveats
+1. Verified visually only through software WebGL at 960×540 (menu, day, night, cinematic frames, close-ups). **Not verified on a real GPU**: performance numbers, bloom strength, exact IBL brightness at dusk.
+2. Zombie horde close-ups were only briefly eyeballed; spitter/bloater silhouettes & the acid-sac glow deserve a tuning pass.
+3. Foliage cards cast alpha-tested shadows — if GPU time is tight on mid devices, set `castShadow=false` on `pineCardsGeo` meshes in `props.ts` (Medium/Low tiers) first.
+4. Audio is still synthesized; new sounds (`thunder`, `spit`, `splat`) are rough.
+5. Mobile: no on-screen dash button yet (SHIFT only).
 
 ## Key decisions & rationale
-* **Imperative Three.js core + tiny external store** instead of react-three-fiber: max perf control, no React re-render cost in the loop.
-* **No physics engine**: 2D circle separation + hitscan is enough and far cheaper for 240 zombies.
-* **Instanced zombies**: 7 draw calls for the horde; per-part pivots handled in `ZombieSwarm.put`.
-* **Fixed slot positions** (`SLOT_PAIR_X`): upgrading the ship adds pads without moving existing buildings.
-* **Hull is a rectangle** for gameplay (`ship.rect`) even though the bow is pointed (slight visual mismatch at the tip is accepted).
-* **Water is walkable but slow** for both player (×0.62) and zombies (×0.55) — makes the river meaningful without pathfinding.
-* **Light units**: three ≥ r155 physical lights → sun 3.6 / hemi 2.0. Night is intentionally bright-blue so the game stays readable.
-* **Single-file build** (`vite-plugin-singlefile`) → `dist/index.html` is self-contained; Google Fonts link is the only external request (falls back gracefully).
-* Save format v1 in `localStorage['rustrevenge.save.v1']`; settings in `rustrevenge.settings.v1`. Bump `v` if the schema changes.
+* Still **no asset files** — all textures/geometry procedural, single-file build (~1 MB).
+* Realism through *lighting + materials + silhouette*, not polycount: camera is ~26 m away, so IBL, shadows, wetness, wind and proportions matter most.
+* Characters use lofted rings (not skinned meshes) so the horde can stay **instanced** (12 draw calls) with hierarchical per-part matrices.
+* `patchSurface` uses world-space noise → only for static meshes. Characters use UV maps.
+* Env map re-bake is throttled (`envKey` delta 0.06) to avoid per-frame PMREM cost.
+* Save format unchanged (v1). Events are deterministic by night number, so nothing new needs saving.
 
 ## Gotchas discovered
-* Siege zombies must be re-targeted to the ship if the treehouse falls, otherwise the night never ends (fixed; see `Game.damageTreehouse`).
-* `Object3D.rotation.order` is `'YXZ'` for hero/NPC roots so pitch (fall/flip) is local after yaw.
-* Instanced meshes need `frustumCulled = false` for the horde (matrices change every frame).
-* `StaticBatch` requires geometries with the same attribute set (position/normal/uv) — all shared primitives satisfy this.
-* Sound ids for firearms double as weapon ids (`audio.play(w.id)`).
+* `metalnessFactor` is not defined yet in the `roughnessmap_fragment` chunk — use the `metalness` uniform in patches.
+* `PCFSoftShadowMap` was removed in three r18x (warning) → use `PCFShadowMap`.
+* Headless harness canvas stub must return chainable objects (`createRadialGradient().addColorStop`) — fixed in `tools/harness/build.mjs`.
+* Original gotchas from session 1 still apply (siege retarget, `rotation.order = 'YXZ'`, `frustumCulled=false` on instanced swarm, StaticBatch attribute sets).
 
 ## Tuning knobs (fast wins)
-`config.ts`: wave size, zombie stats, costs, ship tiers, day length. `lighting.ts`: palette/intensity. `game.ts`: camera (`rig.pitch/dist`), quality thresholds.
-`cinematic.ts`: all timings in seconds.
+`config.ts` (waves, zombie stats incl. spitter/bloater), `lighting.ts` (palettes, `env` per phase), `worldfx.ts` (`BLOOD_MOON_NIGHTS`, `STORM_NIGHTS`, loot/speed/count multipliers),
+`post.ts` (grade defaults), `props.ts` (`target` tree count, grass `gN`), `terrain.ts` (colour palette, water shader), `game.ts` (`rig.dist/pitch`).

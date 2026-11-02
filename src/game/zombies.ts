@@ -31,7 +31,9 @@ export interface Zombie extends ZombieVisual {
   slow: number;
 }
 
-const SKINS = [0x7fa65a, 0x6f9a7a, 0x93a36a, 0x7d9484, 0x8fae6e, 0x8aa07a].map((c) => new Color(c));
+const SKINS = [0x8aa86a, 0x7f9a82, 0x9aa878, 0x8a9a8a, 0x93ad78, 0x94a684, 0xa8a88a, 0x7a9078].map((c) => new Color(c));
+const SPITTER_SKIN = new Color(0xa4c050);
+const BLOATER_SKIN = new Color(0xc2b48a);
 const CLOTHS = [0x6b5a4a, 0x4a5a6b, 0x7a3b3b, 0x3f4f3f, 0x5b4b6b, 0x6b6b5a, 0x2f3b4f, 0x8a7a4a].map((c) => new Color(c));
 const BOSS_SKIN = new Color(0x9b4f6b);
 const BOSS_CLOTH = new Color(0x2a2a35);
@@ -97,7 +99,9 @@ export class ZombieManager {
       dead: false,
       deathT: 0,
       flash: 0,
-      skin: boss ? BOSS_SKIN : SKINS[Math.floor(Math.random() * SKINS.length)],
+      skin: boss ? BOSS_SKIN : type === 'spitter' ? SPITTER_SKIN : type === 'bloater' ? BLOATER_SKIN : SKINS[Math.floor(Math.random() * SKINS.length)],
+      fat: type === 'bloater' ? 1.7 : type === 'brute' ? 1.25 : 1,
+      variant: type === 'spitter' ? 1 : type === 'bloater' ? 2 : 0,
       cloth: boss ? BOSS_CLOTH : CLOTHS[Math.floor(Math.random() * CLOTHS.length)],
       hp,
       maxHp: hp,
@@ -155,7 +159,7 @@ export class ZombieManager {
   }
 
   /* -------------------- wave control -------------------- */
-  beginNight(n: number) {
+  beginNight(n: number, countMul = 1) {
     this.nightNo = n;
     this.hpMul = 1 + 0.14 * (n - 1);
     // convert day roamers into hunters
@@ -165,13 +169,17 @@ export class ZombieManager {
         z.night = true;
       }
     }
-    const count = nightZombieCount(n);
+    const count = Math.round(nightZombieCount(n) * countMul);
+    const spitP = n >= 4 ? Math.min(0.12, 0.02 * n) : 0;
+    const bloatP = n >= 3 ? Math.min(0.09, 0.012 * n + 0.01) : 0;
     const runnerP = n >= 2 ? Math.min(0.38, 0.1 + 0.04 * n) : 0;
     const bruteP = n >= 3 ? Math.min(0.22, 0.03 + 0.025 * n) : 0;
     this.queue = [];
     for (let i = 0; i < count; i++) {
       const r = Math.random();
-      this.queue.push(r < bruteP ? 'brute' : r < bruteP + runnerP ? 'runner' : 'walker');
+      this.queue.push(
+        r < bruteP ? 'brute' : r < bruteP + runnerP ? 'runner' : r < bruteP + runnerP + spitP ? 'spitter' : r < bruteP + runnerP + spitP + bloatP ? 'bloater' : 'walker',
+      );
     }
     if (n % 5 === 0) {
       const bosses = Math.floor(n / 5);
@@ -279,13 +287,33 @@ export class ZombieManager {
     } else if (Math.random() < 0.15) {
       g.fx.particles.burst(z.x, z.y + 1.1 * z.scale, z.z, 1, 1.5, 0x6b1d1d, 0.08, 0.3, 1);
     }
-    if (z.hp <= 0) this.kill(z);
+    if (z.hp <= 0) this.kill(z, quiet && dmg >= 1e8);
   }
 
-  private kill(z: Zombie) {
+  private explode(z: Zombie) {
+    const g = this.game;
+    const R = 5.2;
+    g.fx.particles.burst(z.x, z.y + 1.2, z.z, 34, 6, 0xb8e03a, 0.2, 0.8, 4);
+    g.fx.particles.burst(z.x, z.y + 1.2, z.z, 18, 5, 0xffc23a, 0.16, 0.6, 5);
+    g.fx.shock.spawn(z.x, z.y + 0.2, z.z, R, new Color(0.7, 2.2, 0.3), 0.6);
+    g.audio.play('boom', 0.8);
+    g.shake(0.35);
+    g.decals.add(z.x, z.z, 'acid', R * 0.9);
+    const p = g.player;
+    const dp = Math.hypot(p.x - z.x, p.z - z.z);
+    if (p.alive && dp < R) p.hurt(z.def.playerDmg * (1 - (dp / R) * 0.5) * g.difficultyDamage(), z.x, z.z);
+    g.ship.nearest(z.x, z.z, this.tmp);
+    if (Math.hypot(this.tmp.x - z.x, this.tmp.z - z.z) < R * 0.75) g.damageHull(z.def.hullDmg * g.difficultyDamage());
+  }
+
+  private kill(z: Zombie, silent = false) {
     z.dead = true;
     z.deathT = 0;
     const g = this.game;
+    if (silent) {
+      z.hp = 0;
+    } else if (z.type === 'bloater') this.explode(z);
+    else g.decals.add(z.x, z.z, 'blood', 0.9 + z.scale * 0.5);
     g.fx.particles.burst(z.x, z.y + 0.8 * z.scale, z.z, z.type === 'boss' ? 30 : 8, 3.5, 0x5a1515, 0.12, 0.6, 3);
     g.audio.play('zdie', z.type === 'brute' || z.type === 'boss' ? 1 : 0.6);
     g.onZombieKilled(z);
@@ -380,7 +408,8 @@ export class ZombieManager {
         const dx = tx - z.x;
         const dz = tz - z.z;
         const d = Math.hypot(dx, dz) || 0.001;
-        const reach = isPlayer ? 0.7 * sc + 0.55 : z.tgt === 1 && z.night ? 3.2 : 0.35 + 0.5 * sc;
+        const ranged = z.type === 'spitter';
+        const reach = ranged ? Math.max(3.5, 8.5 - Math.max(0, g.run.nightClock - 60) * 0.06) : isPlayer ? 0.7 * sc + 0.55 : z.tgt === 1 && z.night ? 3.2 : 0.35 + 0.5 * sc;
         faceX = dx;
         faceZ = dz;
         hasFace = true;
@@ -393,7 +422,12 @@ export class ZombieManager {
           if (z.atkCd <= 0) {
             z.atkCd = z.def.atkRate * (0.9 + Math.random() * 0.2);
             z.atk = 0.35;
-            if (isPlayer) p.hurt(z.def.playerDmg * g.difficultyDamage(), z.x, z.z);
+            if (ranged) {
+              g.projectiles.spit(z.x, z.y + 1.5, z.z, tx, tz, isPlayer ? 'player' : z.tgt === 1 ? 'tree' : 'hull', isPlayer ? z.def.playerDmg : z.def.hullDmg);
+            } else if (z.type === 'bloater') {
+              z.hp = 0;
+              this.kill(z);
+            } else if (isPlayer) p.hurt(z.def.playerDmg * g.difficultyDamage(), z.x, z.z);
             else if (z.tgt === 1) g.damageTreehouse(z.def.hullDmg * 2.2);
             else g.damageHull(z.def.hullDmg * g.difficultyDamage());
           }

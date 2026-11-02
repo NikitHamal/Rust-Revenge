@@ -1,5 +1,7 @@
 # Handover — for the next session
 
+> **Session 2 update:** the game now has a procedural-PBR realism pipeline. Read `AGENTS.md` → *Visual pipeline rules* and `docs/VISUAL_QA.md` (you can take real screenshots in the sandbox!) before touching visuals. First tasks: real-GPU perf/brightness tuning, zombie close-up polish, mobile dash button.
+
 You (the next agent) have **no memory** of session 1. Everything you need is in the repo. Read `AGENTS.md`, then this file, then `docs/CONTINUITY.md`.
 
 ## First 30 minutes (do this before adding features)
@@ -24,7 +26,7 @@ You (the next agent) have **no memory** of session 1. Everything you need is in 
 ```
 You are continuing development of "Rust & Revenge", a Three.js zombie-survival/base-building game (React + Vite + Tailwind, TypeScript strict).
 The repo contains AGENTS.md, docs/HANDOVER.md, docs/CONTINUITY.md, docs/ARCHITECTURE.md, docs/GAME_DESIGN.md, docs/ROADMAP.md, docs/TESTING.md — read them first (AGENTS.md → HANDOVER.md → CONTINUITY.md).
-Session 1 built the full game but never saw it on a real GPU. Your job this session: <PUT YOUR TASK HERE, e.g. "run the First-30-minutes visual QA checklist and fix every visual/UX issue you can find, then implement the top 3 ROADMAP items">.
+Session 1 built the full game; session 2 overhauled visuals to PBR realism and added spitters/bloaters/blood moons/storms/supply drops/dash (all verified only via software-rendered screenshots, see docs/VISUAL_QA.md). Your job this session: <PUT YOUR TASK HERE, e.g. "run the First-30-minutes visual QA checklist and fix every visual/UX issue you can find, then implement the top 3 ROADMAP items">.
 Rules: keep `npx tsc --noEmit` clean, `npm run build` passing, run the headless harness (tools/harness) after gameplay changes, keep zombies instanced, put balance numbers in config.ts, and update docs/CONTINUITY.md + ROADMAP.md before finishing.
 ```
 

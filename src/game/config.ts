@@ -171,7 +171,7 @@ export const statCost = (id: StatId, lvl: number) => {
 /* ------------------------------------------------------------------ */
 /* Zombies                                                             */
 /* ------------------------------------------------------------------ */
-export type ZType = 'walker' | 'runner' | 'brute' | 'boss';
+export type ZType = 'walker' | 'runner' | 'brute' | 'boss' | 'spitter' | 'bloater';
 export interface ZDef {
   hp: number;
   speed: number;
@@ -186,6 +186,8 @@ export const ZDEFS: Record<ZType, ZDef> = {
   walker: { hp: 50, speed: 1.6, hullDmg: 4, playerDmg: 9, scale: 1, scrap: 3, wood: 0, atkRate: 1.15 },
   runner: { hp: 30, speed: 3.7, hullDmg: 3, playerDmg: 7, scale: 0.9, scrap: 4, wood: 0, atkRate: 0.8 },
   brute: { hp: 270, speed: 1.15, hullDmg: 14, playerDmg: 28, scale: 1.6, scrap: 20, wood: 4, atkRate: 1.5 },
+  spitter: { hp: 55, speed: 1.55, hullDmg: 7, playerDmg: 9, scale: 1.0, scrap: 9, wood: 0, atkRate: 2.5 },
+  bloater: { hp: 170, speed: 1.0, hullDmg: 34, playerDmg: 30, scale: 1.2, scrap: 14, wood: 2, atkRate: 1.0 },
   boss: { hp: 2600, speed: 1.3, hullDmg: 38, playerDmg: 45, scale: 2.7, scrap: 220, wood: 70, atkRate: 1.6 },
 };
 

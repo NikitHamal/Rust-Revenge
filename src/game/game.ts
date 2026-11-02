@@ -2,7 +2,7 @@ import {
   ACESFilmicToneMapping,
   Color,
   HalfFloatType,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   Plane,
   Raycaster,
@@ -49,6 +49,9 @@ import { Ship } from './ship';
 import { getUI, saveSettings, setUI, type Panel, type Quality, type SlotInfo } from './store';
 import { createTerrain, drawMinimapBase } from './terrain';
 import { ZombieManager, type Zombie } from './zombies';
+import { Decals, Projectiles, WorldEvents } from './worldfx';
+import { createGradePass } from './post';
+import { FX } from './shading';
 
 export interface Run {
   scrap: number;
@@ -112,6 +115,11 @@ export class Game {
   camera = new PerspectiveCamera(40, 1, 0.5, 400);
   composer: EffectComposer | null = null;
   bloom: UnrealBloomPass | null = null;
+  grade: ReturnType<typeof createGradePass> | null = null;
+  decals!: Decals;
+  projectiles!: Projectiles;
+  events!: WorldEvents;
+  hurtFlash = 0;
   light: Lighting;
   props: Props;
   ship: Ship;
@@ -129,7 +137,7 @@ export class Game {
   running = false;
   screen: 'menu' | 'intro' | 'playing' | 'paused' | 'ended' = 'menu';
 
-  rig = { target: new Vector3(0, 1, 0), yaw: Math.PI / 4, yawT: Math.PI / 4, dist: 30, distT: 30, pitch: 0.95 };
+  rig = { target: new Vector3(0, 1, 0), yaw: Math.PI / 4, yawT: Math.PI / 4, dist: 26, distT: 26, pitch: 0.95 };
 
   private time = 0;
   private shakeAmt = 0;
@@ -171,7 +179,7 @@ export class Game {
     this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    this.renderer.shadowMap.type = PCFShadowMap;
     this.renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;outline:none';
     container.appendChild(this.renderer.domElement);
 
@@ -182,6 +190,10 @@ export class Game {
     this.props = new Props(this.scene, this.quality);
     this.ship = new Ship(this.scene);
     this.fx = { particles: new Particles(this.scene, 1000), tracers: new Tracers(this.scene, 180), shock: new Shockwaves(this.scene) };
+    this.light.camera = this.camera;
+    this.decals = new Decals(this.scene);
+    this.projectiles = new Projectiles(this, this.scene);
+    this.events = new WorldEvents(this, this.scene);
     this.zm = new ZombieManager(this, this.scene);
     this.player = new Player(this, this.scene);
     this.chloe = makeHumanoid('chloe');
@@ -254,11 +266,14 @@ export class Game {
         this.bloom = new UnrealBloomPass(new Vector2(256, 256), 0.55, 0.6, 0.9);
         this.composer.addPass(this.bloom);
         this.composer.addPass(new OutputPass());
+        this.grade = createGradePass();
+        this.composer.addPass(this.grade);
       }
     } else if (this.composer) {
       this.composer.dispose();
       this.composer = null;
       this.bloom = null;
+      this.grade = null;
     }
     this.resize();
     setUI({ quality: q });
@@ -293,6 +308,9 @@ export class Game {
     this.run = newRun();
     this.zm.clear();
     this.zm.hpMul = 1;
+    this.events.reset();
+    this.decals.clear();
+    this.projectiles.clear();
     this.ship.setLevel(1);
     for (let i = 0; i < 12; i++) this.ship.remove(i);
     this.ship.build(0, 'gun', 1);
@@ -408,6 +426,7 @@ export class Game {
     this.props.respawnCrates();
     this.props.regrowTrees();
     this.zm.spawnRoamers(3 + Math.min(8, r.night), r.night);
+    this.events.onDay(r.night, first);
     audio.setNight(false);
     this.tauntT = 6 + Math.random() * 6;
     if (!first) {
@@ -420,7 +439,7 @@ export class Game {
       this.tips = [
         { t: 1.5, text: '🏴‍☠️ Welcome aboard, Bruno. Click the glowing pads to build turrets.' },
         { t: 9, text: '🪓 Stand next to orange trees to chop wood. Run over glowing crates for loot.' },
-        { t: 18, text: '💥 Press SPACE for the Belly Flop slam. Q / E rotates the camera.' },
+        { t: 18, text: '💥 SPACE = Belly Flop slam · SHIFT = dash (dodges hits). Q / E rotates the camera.' },
         { t: 30, text: '🌙 Night brings the horde. Upgrade your ship before dark!' },
       ];
       this.dayClock = 0;
@@ -432,7 +451,8 @@ export class Game {
     const r = this.run;
     r.phase = 'night';
     r.nightClock = 0;
-    this.zm.beginNight(r.night);
+    this.events.onNight(r.night);
+    this.zm.beginNight(r.night, this.events.countMul);
     audio.play('alarm', 0.8);
     audio.setNight(true);
     this.toast(`🌙 Night ${r.night} — hold the line!`);
@@ -664,7 +684,7 @@ export class Game {
   /* gameplay API (used by UI + other systems)                        */
   /* ================================================================ */
   difficultySpeed() {
-    return 1 + Math.min(0.25, 0.02 * (this.run.night - 1));
+    return (1 + Math.min(0.25, 0.02 * (this.run.night - 1))) * this.events.speedMul;
   }
   difficultyDamage() {
     return 1 + Math.min(0.6, 0.05 * (this.run.night - 1));
@@ -753,7 +773,7 @@ export class Game {
   onZombieKilled(z: Zombie) {
     const r = this.run;
     r.kills++;
-    const s = Math.round(z.def.scrap * (1 + r.night * 0.06));
+    const s = Math.round(z.def.scrap * (1 + r.night * 0.06) * this.events.lootMul);
     this.addResource('scrap', s);
     if (z.def.wood) this.addResource('wood', z.def.wood);
     if (z.type === 'boss') {
@@ -1030,6 +1050,7 @@ export class Game {
   private update(dt: number) {
     const t = this.time;
     this.waterMat.uniforms.uTime.value = t;
+    FX.time.value = t;
     // light target
     let target = 1;
     const r = this.run;
@@ -1043,6 +1064,9 @@ export class Game {
     this.fx.particles.update(dt);
     this.fx.tracers.update(dt);
     this.fx.shock.update(dt);
+    this.events.update(dt, t);
+    this.updateGrade(dt, t);
+    if (this.running) this.projectiles.update(dt);
 
     if (this.screen === 'intro') {
       this.cinematic.update(dt);
@@ -1067,6 +1091,26 @@ export class Game {
     }
   }
 
+  private updateGrade(dt: number, t: number) {
+    const gp = this.grade;
+    if (!gp) return;
+    const u = gp.uniforms;
+    u.uTime.value = t;
+    const sz = this.renderer.getSize(this.tmpV2);
+    u.uRes.value.set(sz.x, sz.y);
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2.2);
+    u.uHurt.value = this.hurtFlash;
+    const b = this.light.blood * (1 - this.light.L);
+    const tint = u.uTint.value as number[];
+    tint[0] = 1 + b * 0.12;
+    tint[1] = 1 - b * 0.1;
+    tint[2] = 1 - b * 0.12;
+    u.uStorm.value = this.light.storm;
+    u.uVig.value = 0.4 + (1 - this.light.L) * 0.2 + b * 0.15;
+  }
+
+  private tmpV2 = new Vector2();
+
   private idleHero(dt: number) {
     this.npcPhase += dt;
     const h = this.player.h;
@@ -1088,7 +1132,7 @@ export class Game {
       if (r.timer <= 0) this.startNight();
     } else {
       r.nightClock += dt;
-      const cleared = this.zm.queue.length === 0 && (this.zm.alive === 0 || (this.zm.alive <= 2 && r.nightClock > 150));
+      const cleared = this.zm.queue.length === 0 && (this.zm.alive === 0 || (this.zm.alive <= 2 && r.nightClock > 150) || (this.zm.alive <= 6 && r.nightClock > 260));
       if (cleared && r.nightClock > 6) {
         this.zm.each((z) => this.zm.damage(z, 1e9, 0, 0, 0, true)); // stragglers collapse at dawn
         this.endNight();
@@ -1208,6 +1252,10 @@ export class Game {
     // crates & trees
     g.fillStyle = '#ffd24a';
     for (const cr of this.props.crates) if (cr.active) g.fillRect(mx(cr.x) - 1.5, mz(cr.z) - 1.5, 3, 3);
+    if (this.events.drop.active && this.events.drop.landed) {
+      g.fillStyle = '#58e0ff';
+      g.fillRect(mx(this.events.drop.x) - 2.5, mz(this.events.drop.z) - 2.5, 5, 5);
+    }
     g.fillStyle = '#ff9a3c';
     for (const t of this.props.trees) if (!t.felled) g.fillRect(mx(t.x) - 1, mz(t.z) - 1, 2, 2);
     // ship

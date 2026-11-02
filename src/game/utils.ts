@@ -18,6 +18,7 @@ import {
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { patchSurface } from './shading';
 
 export function mulberry32(a: number) {
   return () => {
@@ -47,6 +48,7 @@ export function stdMat(color: number, rough = 0.85, metal = 0.0): MeshStandardMa
   let m = matCache.get(key);
   if (!m) {
     m = new MeshStandardMaterial({ color, roughness: rough, metalness: metal });
+    patchSurface(m, metal > 0.5 ? { scale: 5, grime: 0.22, bump: 0.35, rough: 0.3 } : { scale: 3.5, grime: 0.34, bump: 0.5, rough: 0.22, cloud: false });
     matCache.set(key, m);
   }
   return m;
